@@ -1,0 +1,45 @@
+Bottom Line Up Front (because we both know you're too busy to read EVERYTHING below - I got you)
+- I now completely understand why a cloud resume is necessary for employers/recruiters to feel comfortable with a cadidates skills 
+- I'm gaining confidence rapidly with the AWS U/I and troubleshooting is becoming more intuitive rather than an uphill battle 
+- I enjoy being able to learn how website connections work 'under the hood'
+- As someone who gains rapid operational awareness through task emmersion, the satisfaction of getting all the components in this chapter to work was great. On to the next. 
+
+1. Re-enable  distribution. In CloudFront, select it and click Enable. 
+	At the end of my most previous project I disabled the distribution for peace of mind 	ensuring that the distribution wouldn't be able to be accessed at all. 
+
+2. Request a certificate. In AWS Certificate Manager, switch to the North Virginia region first. Request a public certificate for the subdomain (check DNS validation)
+	- Since CloudFront is a global service and all certificates are distro'd from Northern VA, we must ensure that Northern VA is our selected region when requesting a certificate. This is important to look at since your region will default to whatever region you've been working with most recently. 
+	- Why are we requesting a public certificate and not a private one in this instance? Since users are requesting access from the open web (which is the 	public), we'll select a public subnet. If the websites and servers are internal	and/or the people connecting are already inside our network, we would opt for a private certificate, so internal devices can verify the server is genuine. 
+	- Keep the 'disable export' button selected since we're working with CloudFront and don't want the key to be exported anywhere. 
+	- Since were not working with strict security policies or looking for long-lived-high-security, RSA 2048 key algorithm will work just fine. 
+
+3. Adding the validation record in Hostinger. CNAME name and value from ACM -> take to Hostinger. In Hostinger's DNS settings, add that CNAME record.
+	- Adding the CNAME name and value to Hostinger with the exact values taken from AWS ACM allows Hostinger and AWS to establish a trusted connection. If either the CNAME name or value didn't match, an error would populate. 
+	 
+4. Wait for the certificate to say Issued.
+	-This process can take a while, for me it took almost an hour...
+	-THIS WAS A PROBLEM
+	-During my first attempt, I didn't know that you must copy the entire CNAME name from AWS ACM to the Name section in Hostinger. Instead, I copied the entire string. After an hour of waiting and some troubleshooting that included lots of clicking and verifying google dig results, it finally populated after copying everything in the CNAME name except for, 'com'. This is likely common knowledge for others, but it stumped me the first time. 
+
+5. Add the subdomain to CloudFront.
+  - Edit the distribution settings, add your subdomain under Alternate domain names, select the new certificate, and save. Wait for it to deploy. 
+  - After all the troubleshooting during step 4, this step was a relief since it went so quickly.
+
+6. Point the subdomain at CloudFront.
+  - Go back to Hostinger. 
+  - In Hostinger's DNS settings, add an additional record. In this case, adding a CNAME record with the word that's the only different word from the domain name we created in AWS vs what's present in the existing domain in Hostinger (watch my video for a visual explanation, it's much better!)
+  - Add the value set to your CloudFront .net address (located in distributions section under 'distribution domain name) to the Hostinger 'Target' section while creating the same record.
+
+7. Ensure your default root object has the name of the OBJECT you're trying to reference listed WITH the extension.
+  -This was another point where I got stuck since I didn't copy the entire object name with the extension. 
+
+8. Test it.
+  - Open subdomain in a browser, (padlock and valid certificate will be visible under 'connection is secure').
+  - Resume loads
+  - 
+9. Full circle showing object Security 
+  - Direct S3 link on object will still give, 'Access Denied'. 
+
+10. Link from Hostinger site.
+ - Please find the secure link to the secure resume on the cloud portfolio website. It's under the image on the right side of 'Chapter 2' (likely the same site that led you here, unless you got here through LinkedIn)
+
