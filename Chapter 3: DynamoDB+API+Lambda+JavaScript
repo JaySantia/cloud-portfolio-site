@@ -1,0 +1,101 @@
+What's needed? 
+
+1. Hostinger Site
+2. S3 bucket with resume.html (Chapter 1 content)
+
+3. Create a DynamoDB table to house the initial count and updated count (us-east-1)
+- While creating a table and an item I ran into an issue. By navigating from the table > explore items > create item, my item wouldn't save. So instead, I navigated from the tables home page to the item itself, clicked on it, then added an attribute in the 'edit item' page. That's where I was able to add the attribute of 'visits' 
+
+4. Lambda function to increment and return (us-east-1)
+- What does the Lambda function actually need to work? It needs IAM permissions to access the table and update the table which is dynamodb:UpdateItem. 
+- Least privilege is king so we're ensuring that the IAM role is ONLY for our ARN and ONLY for update. 
+
+Code for Lambda Function is as follows:
+--------------------------------------------------------------
+import json # json is a lightweight data interchange format 
+import boto3
+# collection of classes, code, helpers, scripts (the object is when you create an instance, brush your OOP) aka SDK “software development kit”
+
+dynamodb = boto3.resource ("dynamodb") #Opens a connection to DynamoDB
+table = dynamodb.Table ("Counter") #The connection was opened with the above, now we need a target
+
+def lambda_handler(event, context): # Demonstrates a simple HTTP endpoint using API Gateway. You have full access to the request and response payload, including headers and status code.
+    response = table.update_item( 
+        #Table update item is a method that updates an item in the table
+        Key={"number_count": 0},
+        #The key is the primary key of the item you want to update in the respective DynamoDB table 
+        UpdateExpression="ADD visits :inc", #ADD is a keyword in DynamoDB, visits is the name of the attribute, inc is the increment
+        ExpressionAttributeValues={":inc": 1},
+        ReturnValues="UPDATED_NEW", # Returns the updated value of the attribute (DynamoDB-ism, it's a parameter of 'update_item" in line 6)
+    )
+    visits = int(response["Attributes"]["visits"])
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"visits": visits}), # json.dumps converts a Python object into a json string
+    }
+
+------------------------------------------------------
+
+No credentials live in the code. The Lambda execution role provides temporary credentials scoped to UpdateItem on a single table.
+
+That being said, we now need to give our Lambda function permissions to use DynamoDB here in IAM BEFORE WE DEPLOY AND TEST THE ABOVE CODE!!! Give permissions first, so the Lambda function actually has the permission(s) it needs to test the code sucessfully. The permission is attached to the functions execution role in IAM (since we're opening the configuration tab, and further, the execution role in Lambda). 
+
+Now, we need to update the configuration tab and navigate to permissions. Here is were we provide the Lambda execution role. Opening the 'role name' opens a new tab to IAM where you can navigate to 'add permissions' & 'create inline policy'. View under JSON, instead of 'visual'. 
+
+At this point I preferred to navigate via the Edit Statement sidebar to create the execution role. It saved me from having to write, indent, and proofread the code if an error occurred. This way, AWS types each line for me, reducing human error through typing. 
+
+It IS STILL IMPORTANT TO PROOFREAD THE CODE. Throughout every project, I've proofread every chunk of code ensuring it made sense and IT'S SECURE. Blindly handing over complete code authority to any entity that auto-fills is bad practice and can create ripple effect issues. Think about recently when AWS had a large outage. When that outage occurred I suspected it was due to auto-generated code. Months later after investigations were made public, it was revealed that that's exactly what happened! So there's a real-world, large-scale example of ripple effects from auto-generated code without comprehension or perhaps dedicated attention to detail; maybe both, who knows. 
+
+
+Anyway, here's the policy editor content for the IAM role
+------------------------------------------------------------
+{{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "CounterLambdaExecutionPolicy",
+			"Effect": "Allow",
+			"Action": [
+				"dynamodb:UpdateItem"
+			],
+			"Resource": [
+			"arn:aws:dynamodb:useast-1:[ain't no way you're finding the accnt # here]:table/VisitorCounter"
+			]
+		}
+	]
+}
+------------------------------------------------------------
+Create the function with a memorable name.
+
+After it's created, navigate to the permissions and trust tabs for your role. The permissions tab shows what the role can do and the trust relationships tab depicts who can assume the permissions.
+
+- RETURN TO THE LAMBDA FUNCTION CODE INTERFACE to test the Lambda function
+1. Deploy the function: Successfully updated the function VisitorCounter.
+2. test the function: Create new event  
+3. retest to view increment increase
+
+Ideally, this would've been a simple deploy > test > success... But it wasn't initially. I had to troubleshoot for HOURS to find the issue switching between DynamoDB, IAM and Lambda checking every configuration possible. 
+
+Here's what it looked like... 
+Troubleshooting: Lambda "AccessDeniedException" on DynamoDB
+
+My visitor counter Lambda returned an AccessDeniedException on UpdateItem, with a message saying no identity-based policy allowed the action. I worked through the IAM side first. I corrected the policy action from UpdateTable to UpdateItem, confirmed the policy was attached to the right execution role, verified the table ARN, and used the IAM policy simulator to confirm the role was allowed to perform UpdateItem.
+
+The root cause was in my code, not IAM. DynamoDB table names are case sensitive, and my function referenced "counter" while the table is named "Counter." Fixing the capitalization resolved it. Takeaway: an access denied error can be a name mismatch in disguise, and the policy simulator is a fast way to rule IAM in or out. Who knew!? Well now it's me, I know now.
+
+5. API GW in front of Lambda 
+I've seen this done a few different ways but it seems easiest to stay on the Lambda page and just select, "add trigger" > API Gateway > Create a new API > HTTP APi (cheaper, newer), open API (because this is going to be publicly accessible, there's no way for the users to be authenticated through IAM to increate the visitor count)> additional settings check 'CORS' because we're not hosting our website on AWS, it's on Hostinger.
+
+Once the trigger is added, click on your API GW and navigate to configuration > triggers > on the new page access routers under develop > edit route > here is where we take our API endpoint listed under Lambda>EventFunctions>VisitorCounter' then navigate to your API GW>configuration>triggers> copy your endpoint and paste it in the html doc to reference the endpoint itself. 
+
+6. Adjust CORS so the API GW has to explicitly allow the subdomain 
+Access the API, navigate to CORS under Develop. Remove the * that allows access from any website and replace that with the personal subdomain. I allowed only the subdomain and only GET, which keeps the API as locked down as the counter needs.
+
+Scroll to API GW Stages and copy the INVOKE URL after the CORS is saved. Take the invoke URL and paste it at the fetch section of the new resume.html so the document can actually call the API!
+
+7. Write JavaScript that calls the API GW and shows the count
+Once the new resume with the html referencing the visitor counter is uploaded to my S3 bucket. I deleted the original resume.html and renamed the new upload from it's existing name to now say resume.html. 
+
+8. To read the new version, create a CloudFront invalidation (/*) to reset the cache (removing cached files from CloudFront edge locations before the scheduled TTL).
+
+9. Open the resume at my subdomain & counter appeared at the top of the page with the correct couunt. 
